@@ -2,7 +2,7 @@
 deployment:
   tasks:
     # Deploy backend API
-    - export DEPLOYPATH=/home/YOUR_CPANEL_USERNAME/public_html
+    - export DEPLOYPATH=/home/morskiiz/public_html
 
     # Copy main API file
     - /bin/cp api.php $DEPLOYPATH/api.php
