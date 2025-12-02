@@ -1,0 +1,48 @@
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+api_errors.log
+
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+build/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.*.local
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Backend sensitive files (IMPORTANT - Do not commit!)
+# includes/db.php contains database credentials
+# Create includes/db.example.php as template instead
+includes/db.php
+
+# Temporary uploads
+uploads/temp/*
+!uploads/temp/.gitkeep
+
+# Cache
+.cache/
+*.cache
