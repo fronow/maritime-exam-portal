@@ -1,0 +1,25 @@
+---
+deployment:
+  tasks:
+    # Deploy backend API
+    - export DEPLOYPATH=/home/YOUR_CPANEL_USERNAME/public_html
+
+    # Copy main API file
+    - /bin/cp api.php $DEPLOYPATH/api.php
+
+    # Copy includes directory (but preserve db.php if it exists)
+    - /bin/cp -r includes/actions $DEPLOYPATH/includes/
+    - /bin/cp includes/auth.php $DEPLOYPATH/includes/
+    - /bin/cp includes/utils.php $DEPLOYPATH/includes/
+
+    # Only copy db.php if it doesn't exist (first deployment)
+    - /bin/cp -n includes/db.example.php $DEPLOYPATH/includes/db.php || true
+
+    # Set proper permissions
+    - /bin/chmod 644 $DEPLOYPATH/api.php
+    - /bin/chmod 644 $DEPLOYPATH/includes/*.php
+    - /bin/chmod 644 $DEPLOYPATH/includes/actions/*.php
+
+    # Create logs directory if it doesn't exist
+    - /bin/mkdir -p $DEPLOYPATH/logs
+    - /bin/chmod 755 $DEPLOYPATH/logs
