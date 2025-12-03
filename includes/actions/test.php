@@ -35,19 +35,14 @@ function action_generate_test($data, $token) {
     }
 
     // Get category details
-    $sql = "SELECT * FROM categories WHERE id = ?";
-    $category = dbQuerySingle($sql, [$categoryId]);
+    $category = getCategoryById($categoryId);
 
     if (!$category) {
         throw new Exception('Category not found', 404);
     }
 
     // Get all questions for this category, sorted by original_index
-    $sql = "SELECT * FROM questions
-            WHERE category_id = ?
-            ORDER BY original_index";
-
-    $allQuestions = dbQuery($sql, [$categoryId]);
+    $allQuestions = getQuestionsForCategory($categoryId);
 
     if (count($allQuestions) < 60) {
         throw new Exception('Not enough questions in this category to generate a test', 400);

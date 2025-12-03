@@ -117,12 +117,11 @@ function action_login($data) {
  * @param array $data Request data (unused)
  */
 function action_get_initial_data($data) {
-    // Get all active categories
-    $sql = "SELECT * FROM categories WHERE is_active = TRUE ORDER BY name_en";
-    $categories = dbQuery($sql);
+    // Get all categories using compatibility layer
+    $categories = getCategories();
 
-    // Get all active packages with category IDs
-    $sql = "SELECT * FROM packages WHERE is_active = TRUE ORDER BY name_en";
+    // Get all packages
+    $sql = "SELECT * FROM packages ORDER BY name_en";
     $packages = dbQuery($sql);
 
     // Get category IDs for each package

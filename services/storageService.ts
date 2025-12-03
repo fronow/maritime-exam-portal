@@ -3,7 +3,7 @@ import { User, Category, Question, TestSession, Package, GlobalSettings, Role } 
 import { INITIAL_CATEGORIES_RAW } from '../constants';
 
 // CONFIGURATION
-const API_URL = '/api.php'; // For production: 'https://yourdomain.com/api.php'
+const API_URL = 'https://news.morskiizpit.com/api.php'; // Subdomain for testing
 
 // Session token storage
 const KEY_SESSION_TOKEN = 'maritime_session_token';
