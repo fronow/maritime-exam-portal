@@ -2,7 +2,7 @@
 deployment:
   tasks:
     # Deploy backend API (to subdomain for testing)
-    - export DEPLOYPATH=/home/morskiiz/public_html/news.morskiizpit.com
+    - export DEPLOYPATH=/home/morskiiz/news.morskiizpit.com
 
     # Copy main API file
     - /bin/cp api.php $DEPLOYPATH/api.php
