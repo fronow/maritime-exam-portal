@@ -251,32 +251,12 @@ function preparePackageData($package, $categoryIds = []) {
 
 /**
  * Prepare question data for API response (hide correct answer for active tests)
- * @param array $question Question data
- * @param bool $includeAnswer Whether to include correct answer
- * @return array Formatted question
+ * MOVED TO db_compat.php - This function is now handled by the compatibility layer
  */
-function prepareQuestionData($question, $includeAnswer = false) {
-    $data = [
-        'id' => (int)$question['id'],
-        'categoryId' => (int)$question['category_id'],
-        'originalIndex' => (int)$question['original_index'],
-        'text' => $question['question_text'],
-        'optionA' => $question['option_a'],
-        'optionB' => $question['option_b'],
-        'optionC' => $question['option_c'],
-        'optionD' => $question['option_d']
-    ];
-
-    if (!empty($question['image_filename'])) {
-        $data['image'] = $question['image_filename'];
-    }
-
-    if ($includeAnswer) {
-        $data['correctAnswer'] = $question['correct_answer'];
-    }
-
-    return $data;
-}
+// function prepareQuestionData($question, $includeAnswer = false) {
+//     // This function has been moved to includes/db_compat.php
+//     // to support both old and new database structures
+// }
 
 /**
  * Prepare test session data for API response
