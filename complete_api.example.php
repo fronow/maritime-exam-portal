@@ -9,9 +9,24 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/api_errors.log');
 
-header('Access-Control-Allow-Origin: *');
+// Security: Force HTTPS
+if (!isset($_SERVER['HTTPS']) || $_SERVER['HTTPS'] !== 'on') {
+    if (!in_array($_SERVER['REMOTE_ADDR'], ['127.0.0.1', '::1'])) { // Allow localhost for testing
+        header('HTTP/1.1 403 Forbidden');
+        die(json_encode(['success' => false, 'error' => 'HTTPS required']));
+    }
+}
+
+// Security: CORS - Only allow your domain
+$allowed_origin = 'https://news.morskiizpit.com';
+if (isset($_SERVER['HTTP_ORIGIN']) && $_SERVER['HTTP_ORIGIN'] === $allowed_origin) {
+    header('Access-Control-Allow-Origin: ' . $allowed_origin);
+} else {
+    header('Access-Control-Allow-Origin: ' . $allowed_origin); // Fallback
+}
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Credentials: true');
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -35,6 +50,132 @@ function getDb() {
         );
     }
     return $pdo;
+}
+
+// Security: Rate limiting (simple IP-based)
+function checkRateLimit($action, $identifier) {
+    $pdo = getDb();
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM audit_log WHERE action = ? AND details LIKE ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
+    $stmt->execute([$action, "%$identifier%"]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $limits = [
+        'register' => 5,  // Max 5 registrations per IP per hour
+        'login' => 20     // Max 20 login attempts per IP per hour
+    ];
+
+    return ($result['count'] < ($limits[$action] ?? 100));
+}
+
+// Security: Validate email
+function validateEmail($email) {
+    $email = filter_var($email, FILTER_SANITIZE_EMAIL);
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+// Security: Validate password strength
+function validatePassword($password) {
+    $errors = [];
+
+    if (strlen($password) < 8) {
+        $errors[] = 'Password must be at least 8 characters';
+    }
+    if (!preg_match('/[A-Z]/', $password)) {
+        $errors[] = 'Password must contain at least one uppercase letter';
+    }
+    if (!preg_match('/[a-z]/', $password)) {
+        $errors[] = 'Password must contain at least one lowercase letter';
+    }
+    if (!preg_match('/[0-9]/', $password)) {
+        $errors[] = 'Password must contain at least one number';
+    }
+
+    return [
+        'valid' => empty($errors),
+        'errors' => $errors
+    ];
+}
+
+// Security: Sanitize input
+function sanitizeInput($input) {
+    return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+}
+
+// Security: Generate secure token
+function generateSecureToken($userId) {
+    $data = [
+        'user_id' => $userId,
+        'timestamp' => time(),
+        'random' => bin2hex(random_bytes(16))
+    ];
+
+    $json = json_encode($data);
+
+    // Use openssl to encrypt token
+    $key = hash('sha256', 'YOUR_SECRET_KEY_HERE_CHANGE_THIS', true); // ⚠️ CHANGE THIS!
+    $iv = substr(hash('sha256', 'YOUR_IV_HERE_CHANGE_THIS'), 0, 16);
+
+    $encrypted = openssl_encrypt($json, 'AES-256-CBC', $key, 0, $iv);
+    return base64_encode($encrypted);
+}
+
+// Security: Verify token and return user data
+function verifyToken($token) {
+    try {
+        $key = hash('sha256', 'YOUR_SECRET_KEY_HERE_CHANGE_THIS', true);
+        $iv = substr(hash('sha256', 'YOUR_IV_HERE_CHANGE_THIS'), 0, 16);
+
+        $encrypted = base64_decode($token);
+        $json = openssl_decrypt($encrypted, 'AES-256-CBC', $key, 0, $iv);
+
+        if (!$json) return false;
+
+        $data = json_decode($json, true);
+
+        // Check if token is expired (7 days)
+        if (time() - $data['timestamp'] > 7 * 24 * 60 * 60) {
+            return false;
+        }
+
+        // Get user from database
+        $pdo = getDb();
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->execute([$data['user_id']]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user || $user['is_suspended']) {
+            return false;
+        }
+
+        return $user;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+// Security: Require authentication (returns user or throws exception)
+function requireAuth($sessionToken) {
+    $user = verifyToken($sessionToken);
+    if (!$user) {
+        throw new Exception('Authentication required', 401);
+    }
+    return $user;
+}
+
+// Security: Require admin authentication (returns admin user or throws exception)
+function requireAdmin($sessionToken) {
+    $user = requireAuth($sessionToken);
+    if ($user['role'] !== 'ADMIN') {
+        throw new Exception('Admin access required', 403);
+    }
+    return $user;
+}
+
+// Security: Get client IP (only trust REMOTE_ADDR to prevent spoofing)
+function getClientIp() {
+    // Only trust REMOTE_ADDR as it cannot be spoofed by the client
+    // If behind a proxy, configure your proxy to set REMOTE_ADDR correctly
+    return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 }
 
 function formatUser($user) {
@@ -117,57 +258,117 @@ try {
         // ============ AUTH ACTIONS ============
 
         case 'register':
-            $email = $data['email'];
-            $password = $data['password'];
-            $firstName = $data['firstName'];
-            $lastName = $data['lastName'];
+            // Security: Rate limiting
+            $clientIp = getClientIp();
+            if (!checkRateLimit('register', $clientIp)) {
+                throw new Exception('Too many registration attempts. Please try again later.');
+            }
 
+            // Security: Sanitize inputs
+            $email = sanitizeInput($data['email']);
+            $password = $data['password']; // Don't sanitize password
+            $firstName = sanitizeInput($data['firstName']);
+            $lastName = sanitizeInput($data['lastName']);
+
+            // Security: Validate email
+            if (!validateEmail($email)) {
+                throw new Exception('Invalid email address');
+            }
+
+            // Security: Validate password strength
+            $passwordCheck = validatePassword($password);
+            if (!$passwordCheck['valid']) {
+                throw new Exception(implode('. ', $passwordCheck['errors']));
+            }
+
+            // Check if email already exists
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
             $stmt->execute([$email]);
             if ($stmt->fetch()) {
                 throw new Exception('Email already registered');
             }
 
-            $hash = password_hash($password, PASSWORD_BCRYPT);
+            // Hash password securely
+            $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+
+            // Insert user
             $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, is_suspended) VALUES (?, ?, ?, ?, 'USER', FALSE)");
             $stmt->execute([$email, $hash, $firstName, $lastName]);
             $userId = $pdo->lastInsertId();
 
+            // Log registration for rate limiting
+            $stmt = $pdo->prepare("INSERT INTO audit_log (action, details) VALUES ('register', ?)");
+            $stmt->execute([json_encode(['ip' => $clientIp, 'email' => $email])]);
+
+            // Get user
             $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
             $stmt->execute([$userId]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // Generate secure token
+            $token = generateSecureToken($user['id']);
 
             echo json_encode([
                 'success' => true,
                 'data' => [
                     'user' => formatUser($user),
-                    'session_token' => base64_encode(json_encode(['user_id' => $user['id'], 'time' => time()]))
+                    'session_token' => $token
                 ],
                 'message' => 'Registration successful'
             ]);
             break;
 
         case 'login':
-            $email = $data['email'];
+            // Security: Rate limiting
+            $clientIp = getClientIp();
+            if (!checkRateLimit('login', $clientIp)) {
+                throw new Exception('Too many login attempts. Please try again later.');
+            }
+
+            // Security: Sanitize email
+            $email = sanitizeInput($data['email']);
             $password = $data['password'];
 
+            // Security: Validate email format
+            if (!validateEmail($email)) {
+                throw new Exception('Invalid email address');
+            }
+
+            // Get user
             $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
             $stmt->execute([$email]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
+            // Security: Use constant time comparison to prevent timing attacks
             if (!$user || !password_verify($password, $user['password_hash'])) {
+                // Log failed attempt
+                $stmt = $pdo->prepare("INSERT INTO audit_log (action, details) VALUES ('login_failed', ?)");
+                $stmt->execute([json_encode(['ip' => $clientIp, 'email' => $email])]);
+
                 throw new Exception('Invalid email or password');
             }
 
+            // Check if account is suspended
             if ($user['is_suspended']) {
-                throw new Exception('Account suspended');
+                throw new Exception('Account suspended. Please contact support.');
             }
+
+            // Log successful login
+            $stmt = $pdo->prepare("INSERT INTO audit_log (user_id, action, details) VALUES (?, 'login', ?)");
+            $stmt->execute([$user['id'], json_encode(['ip' => $clientIp])]);
+
+            // Update last login time
+            $stmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+            $stmt->execute([$user['id']]);
+
+            // Generate secure token
+            $token = generateSecureToken($user['id']);
 
             echo json_encode([
                 'success' => true,
                 'data' => [
                     'user' => formatUser($user),
-                    'session_token' => base64_encode(json_encode(['user_id' => $user['id'], 'time' => time()]))
+                    'session_token' => $token
                 ]
             ]);
             break;
@@ -201,6 +402,10 @@ try {
         // ============ ADMIN ACTIONS ============
 
         case 'get_admin_data':
+            // Security: Require admin authentication
+            $token = $request['session_token'] ?? null;
+            $admin = requireAdmin($token);
+
             $stmt = $pdo->query("SELECT * FROM users ORDER BY created_at DESC");
             $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -224,6 +429,10 @@ try {
             break;
 
         case 'save_settings':
+            // Security: Require admin authentication
+            $token = $request['session_token'] ?? null;
+            $admin = requireAdmin($token);
+
             $settings = $data['settings'] ?? [];
 
             foreach ($settings as $key => $value) {
@@ -236,6 +445,10 @@ try {
             break;
 
         case 'save_category':
+            // Security: Require admin authentication
+            $token = $request['session_token'] ?? null;
+            $admin = requireAdmin($token);
+
             $cat = $data['category'];
             $id = $cat['id'] ?? null;
 
@@ -255,6 +468,10 @@ try {
             break;
 
         case 'approve_request':
+            // Security: Require admin authentication
+            $token = $request['session_token'] ?? null;
+            $admin = requireAdmin($token);
+
             $requestId = $data['requestId'] ?? null;
             $userId = $data['userId'];
             $categoryIds = $data['categoryIds'] ?? [];
@@ -290,6 +507,10 @@ try {
             break;
 
         case 'get_pending_requests':
+            // Security: Require admin authentication
+            $token = $request['session_token'] ?? null;
+            $admin = requireAdmin($token);
+
             // Get all pending requests with user and category details
             $stmt = $pdo->query("
                 SELECT
@@ -326,6 +547,10 @@ try {
             break;
 
         case 'reject_request':
+            // Security: Require admin authentication
+            $token = $request['session_token'] ?? null;
+            $admin = requireAdmin($token);
+
             $userId = $data['userId'];
             $categoryIds = $data['categoryIds'];
 
@@ -338,8 +563,17 @@ try {
             break;
 
         case 'toggle_suspend':
+            // Security: Require admin authentication
+            $token = $request['session_token'] ?? null;
+            $admin = requireAdmin($token);
+
             $userId = $data['userId'];
             $suspend = $data['suspend'] ? 1 : 0;
+
+            // Prevent admin from suspending themselves
+            if ($userId == $admin['id']) {
+                throw new Exception('You cannot suspend your own account', 400);
+            }
 
             $stmt = $pdo->prepare("UPDATE users SET is_suspended = ? WHERE id = ?");
             $stmt->execute([$suspend, $userId]);
@@ -350,7 +584,11 @@ try {
         // ============ USER ACTIONS ============
 
         case 'request_access':
-            $userId = $data['userId'];
+            // Security: Require user authentication
+            $token = $request['session_token'] ?? null;
+            $user = requireAuth($token);
+
+            $userId = $user['id']; // Use authenticated user's ID, not from request
             $categoryIds = $data['categoryIds'];
 
             foreach ($categoryIds as $catId) {
@@ -364,8 +602,19 @@ try {
         // ============ TEST ACTIONS ============
 
         case 'generate_test':
+            // Security: Require user authentication
+            $token = $request['session_token'] ?? null;
+            $user = requireAuth($token);
+
             $categoryId = $data['category_id'];
-            $userId = $data['user_id'] ?? 1;
+            $userId = $user['id']; // Use authenticated user's ID
+
+            // Verify user has access to this category
+            $stmt = $pdo->prepare("SELECT * FROM user_categories WHERE user_id = ? AND category_id = ? AND (expires_at IS NULL OR expires_at > NOW())");
+            $stmt->execute([$userId, $categoryId]);
+            if (!$stmt->fetch()) {
+                throw new Exception('You do not have access to this category', 403);
+            }
 
             // Get all questions for category
             $stmt = $pdo->prepare("SELECT id FROM questions WHERE question_category_id = ? ORDER BY id");
@@ -414,13 +663,21 @@ try {
             break;
 
         case 'complete_test':
+            // Security: Require user authentication
+            $token = $request['session_token'] ?? null;
+            $user = requireAuth($token);
+
             $sessionId = $data['session_id'];
             $answers = $data['answers'] ?? [];
 
-            // Get session
-            $stmt = $pdo->prepare("SELECT question_order, user_id, category_id FROM test_sessions WHERE id = ?");
-            $stmt->execute([$sessionId]);
+            // Get session and verify it belongs to this user
+            $stmt = $pdo->prepare("SELECT question_order, user_id, category_id FROM test_sessions WHERE id = ? AND user_id = ?");
+            $stmt->execute([$sessionId, $user['id']]);
             $session = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$session) {
+                throw new Exception('Test session not found or access denied', 404);
+            }
             $questionIds = json_decode($session['question_order'], true);
 
             $score = 0;
@@ -473,7 +730,11 @@ try {
             break;
 
         case 'get_test_history':
-            $userId = $data['userId'];
+            // Security: Require user authentication
+            $token = $request['session_token'] ?? null;
+            $user = requireAuth($token);
+
+            $userId = $user['id']; // Use authenticated user's ID
             $categoryId = $data['categoryId'] ?? null;
 
             $sql = "SELECT ts.*, c.category as category_name

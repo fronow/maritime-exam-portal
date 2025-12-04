@@ -1,0 +1,139 @@
+=====================================================
+SECURE KEYS FOR complete_api.php
+=====================================================
+
+⚠️ IMPORTANT: These are EXAMPLE keys. Generate your own at:
+https://randomkeygen.com/
+
+Copy one of the "Fort Knox Passwords" for each key.
+
+=====================================================
+WHAT TO UPDATE IN complete_api.php:
+=====================================================
+
+1. DATABASE PASSWORD (Line 40):
+   ---------------------------------
+   Current:
+   define('DB_PASS', 'YOUR_PASSWORD');
+
+   Update to:
+   define('DB_PASS', 'your_actual_database_password');
+
+   (Use the password that worked in simple_api.php)
+
+
+2. SECRET KEY (Lines 115 AND 125 - MUST BE SAME):
+   ---------------------------------
+   Current:
+   $key = hash('sha256', 'YOUR_SECRET_KEY_HERE_CHANGE_THIS', true);
+
+   Update to (example):
+   $key = hash('sha256', 'k9Bx2m7Lp4Wn8Vq5Rf3Tj6Yh1Zc0Sg9Md4Np7Qt', true);
+
+   ⚠️ Use SAME value on BOTH lines 115 and 125!
+
+
+3. IV KEY (Lines 116 AND 126 - MUST BE SAME):
+   ---------------------------------
+   Current:
+   $iv = substr(hash('sha256', 'YOUR_IV_HERE_CHANGE_THIS'), 0, 16);
+
+   Update to (example):
+   $iv = substr(hash('sha256', 'Nq8Lr5Mt2Pk9Vw6Xj3Bc7Hf1Zy4Rd0Sg8Kp5Qm'), 0, 16);
+
+   ⚠️ Use SAME value on BOTH lines 116 and 126!
+
+
+=====================================================
+EXAMPLE COMPLETED SECTION:
+=====================================================
+
+// Security: Generate secure token
+function generateSecureToken($userId) {
+    $data = [
+        'user_id' => $userId,
+        'timestamp' => time(),
+        'random' => bin2hex(random_bytes(16))
+    ];
+
+    $json = json_encode($data);
+
+    // Use openssl to encrypt token
+    $key = hash('sha256', 'k9Bx2m7Lp4Wn8Vq5Rf3Tj6Yh1Zc0Sg9Md4Np7Qt', true);
+    $iv = substr(hash('sha256', 'Nq8Lr5Mt2Pk9Vw6Xj3Bc7Hf1Zy4Rd0Sg8Kp5Qm'), 0, 16);
+
+    $encrypted = openssl_encrypt($json, 'AES-256-CBC', $key, 0, $iv);
+    return base64_encode($encrypted);
+}
+
+// Security: Verify token
+function verifyToken($token) {
+    try {
+        $key = hash('sha256', 'k9Bx2m7Lp4Wn8Vq5Rf3Tj6Yh1Zc0Sg9Md4Np7Qt', true);
+        $iv = substr(hash('sha256', 'Nq8Lr5Mt2Pk9Vw6Xj3Bc7Hf1Zy4Rd0Sg8Kp5Qm'), 0, 16);
+
+        $encrypted = base64_decode($token);
+        $json = openssl_decrypt($encrypted, 'AES-256-CBC', $key, 0, $iv);
+
+        if (!$json) return false;
+
+        $data = json_decode($json, true);
+
+        // Check if token is expired (7 days)
+        if (time() - $data['timestamp'] > 7 * 24 * 60 * 60) {
+            return false;
+        }
+
+        return $data;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+
+=====================================================
+QUICK CHECKLIST:
+=====================================================
+
+□ Line 40:  DB_PASS updated with your actual database password
+□ Line 115: Secret key updated (same as line 125)
+□ Line 116: IV key updated (same as line 126)
+□ Line 125: Secret key matches line 115
+□ Line 126: IV key matches line 116
+
+=====================================================
+GENERATE YOUR OWN SECURE KEYS:
+=====================================================
+
+Visit: https://randomkeygen.com/
+
+Look for "Fort Knox Passwords" section.
+Copy one for SECRET KEY.
+Copy another for IV KEY.
+
+Example Fort Knox Passwords:
+- xQ7#mK2$vB9&nL4*pR6@tY8!wZ1%jH3^gF5
+- bN9$cM7#vX2@kL5*qP8&wR3!zT6^yH4%jG1
+- hF8@pL3#rN6*mQ9$tK2&vW7!xY4^bJ5%cZ1
+
+Each password should be 30-40 characters long and unique.
+
+=====================================================
+
+⚠️ IMPORTANT SECURITY NOTES:
+
+1. NEVER share these keys publicly
+2. NEVER commit these keys to git
+3. Use DIFFERENT keys for production vs testing
+4. NEVER reuse keys from this example file
+5. ALWAYS generate your own unique keys
+
+=====================================================
+
+After updating:
+1. Save complete_api.php
+2. Upload to server
+3. Test registration
+4. Check that tokens work after refresh
+
+=====================================================

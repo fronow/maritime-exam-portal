@@ -36,8 +36,10 @@ build/
 
 # Backend sensitive files (IMPORTANT - Do not commit!)
 # includes/db.php contains database credentials
-# Create includes/db.example.php as template instead
+# complete_api.php contains database credentials and encryption keys
+# Create includes/db.example.php and complete_api.example.php as templates instead
 includes/db.php
+complete_api.php
 
 # Temporary uploads
 uploads/temp/*
